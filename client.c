@@ -18,6 +18,8 @@
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 
+char *concatenate(char *method, char *data);
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -36,7 +38,7 @@ int main(int argc, char *argv[])
 	int rv;
 	char s[INET6_ADDRSTRLEN];
 
-	if (argc != 2) {
+	if (argc != 4) {
 	    fprintf(stderr,"usage: client hostname\n");
 	    exit(1);
 	}
@@ -78,17 +80,41 @@ int main(int argc, char *argv[])
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-	if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1) {
+	/*if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1) {
 	    perror("recv");
 	    exit(1);
-	}
+	}*/
 
-	buf[numbytes] = '\0';
+	strcpy(buf, concatenate(argv[2], argv[3]));
+
+	send(sockfd, buf, strlen(buf), 0);
+
+	//buf[numbytes] = '\0';
 
 	printf("client: received '%s'\n",buf);
 
 	close(sockfd);
 
 	return 0;
+}
+
+char *concatenate(char* method, char* data){
+    char* str;
+    int size;
+
+    size = strlen(method) + strlen(data);
+    // ';' + ';' + '\0'
+    size += 3;
+
+    str = (char*)malloc(size*sizeof(char));
+
+    memset(str, '\0', sizeof(str));
+    strcpy(str, method);
+    str[strlen(method)] = ';';
+    strncat(str, data, strlen(data));
+
+    printf("str: %s\n", str);
+
+    return str;
 }
 

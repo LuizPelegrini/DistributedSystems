@@ -38,6 +38,7 @@ int inserir(Dado *dado);
 int processRequest(char *cmd);
 
 Dados *D;
+int chave = 0;
 
 void sigchld_handler(int s)
 {
@@ -63,7 +64,7 @@ int main(int argc, char* argv[])
 	struct sigaction sa;
 	int yes=1;
 	char s[INET6_ADDRSTRLEN];
-	char command[MAX_DATASIZE];
+	char *command;
 	int rv;
 
     if(argc!=2){
@@ -72,6 +73,8 @@ int main(int argc, char* argv[])
     }
 
     init();
+
+    command = (char*)malloc(MAX_DATASIZE*sizeof(char));
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
@@ -165,7 +168,7 @@ int init(){
 }
 
 
-int create(unsigned long chave, char *valor)
+int create(char *valor)
 {
     Dado *dado;
 
@@ -183,7 +186,7 @@ int create(unsigned long chave, char *valor)
 
 
 
-    dado->chave = chave;
+    dado->chave = chave++;
     dado->bytes = valor;
     dado->next = NULL;
 
@@ -216,32 +219,46 @@ int inserir(Dado *dado)
 int processRequest(char *cmd)
 {
     char** req;
-    int w, i = 0;
-    unsigned long chave;
+    int w, i = 0, j=0;
 
-    req = (char**)malloc(3 * sizeof(char*));
+    // size of 2, because it is the method and (value or key)
+    req = (char**)malloc(2 * sizeof(char*));
 
     // Olhar isso aqui depois <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    for(w=0;w<3;w++){
+    for(w=0;w<2;w++){
         req[w] = (char*)malloc(100 * sizeof(char));
     }
 
     // Separates the entire command into an array of strings
     // First Position ->> Method "GET" or "POST" or "PUT" or "DELETE"
-    // Second Postion ->> Key
-    // Third Position ->> Value (optional in some cases)
-    req[i] = strtok(cmd, ";");
-
-    while(req[i]!=NULL){
-        printf("%s\n", req[i]);
+    // Second Postion ->> Value or Key
+    while(cmd[i]!=';'){
         i++;
-        req[i] = strtok(NULL, ";");
     }
+
+
+    while(j < i)
+    {
+        req[0][j] = cmd[j];
+        j++;
+    }
+
+    req[0][j] = '\0';
+    i=0;
+    j++;
+    while(j <= strlen(cmd))
+    {
+        req[1][i] = cmd[j];
+        i++;
+        j++;
+    }
+    req[0][i] = '\0';
+    printf("Method: %s\n", req[0]);
+    printf("Data: %s\n", req[1]);
 
     if(!strcmp(req[0], "POST"))
     {
-        chave = atoi(req[1]);
-        create(chave, req[2]);
+        create(req[1]);
     }
     else if(!strcmp(req[0], "GET"))
     {
