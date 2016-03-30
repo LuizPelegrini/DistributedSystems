@@ -33,12 +33,18 @@ typedef struct dados{
 }Dados;
 
 int init();
-int create();
+int create(int id, char *valor);
 int inserir(Dado *dado);
+int get(int id);
+int put(int id, char *newValue);
+int del(int id);
 int processRequest(char *cmd);
+void printData();
+char *setResponse(int status);
 
+unsigned long chave;
+char res[MAX_DATASIZE];
 Dados *D;
-int chave = 0;
 
 void sigchld_handler(int s)
 {
@@ -63,9 +69,10 @@ int main(int argc, char* argv[])
 	socklen_t sin_size;
 	struct sigaction sa;
 	int yes=1;
-	char s[INET6_ADDRSTRLEN];
 	char *command;
 	int rv;
+	int status;
+	int numbytes;
 
     if(argc!=2){
         fprintf(stderr,"usage: port number\n");
@@ -138,22 +145,23 @@ int main(int argc, char* argv[])
 			perror("accept");
 			continue;
 		}
-        /*
-		inet_ntop(their_addr.ss_family,
-			get_in_addr((struct sockaddr *)&their_addr),
-			s, sizeof s);
-		printf("server: got connection from %s\n", s);
-        */
-		if (!fork()) { // this is the child process
-			close(sockfd); // child doesn't need the listener
-			/*if (send(new_fd, "Hello, world!", 13, 0) == -1)
-				perror("send");*/
-            recv(new_fd, command, MAX_DATASIZE-1, 0);
-            processRequest(command);
-			close(new_fd);
-			exit(0);
-		}
-		close(new_fd);  // parent doesn't need this
+
+		// this is the child process
+        //close(sockfd); // child doesn't need the listener
+        /*if (send(new_fd, "Hello, world!", 13, 0) == -1)
+            perror("send");*/
+        numbytes = recv(new_fd, command, MAX_DATASIZE, 0);
+        command[numbytes] = '\0';
+        status = processRequest(command);
+        //printData();
+        if(send(new_fd, res, MAX_DATASIZE, 0) == -1){
+            fprintf(stderr, "Erro no send\n");
+            return -1;
+        }
+        close(new_fd);
+			//exit(0);
+		//close(new_fd);  // parent doesn't need this
+		//command[0] = '\0';
 	}
 
 	return 0;
@@ -165,29 +173,47 @@ int init(){
 
     D->first = NULL;
     D->numElems = 0;
+
+    //chave = 0;
 }
 
 
-int create(char *valor)
+int create(int id, char *valor)
 {
     Dado *dado;
+    Dado *aux;
+
+    aux = D->first;
+
+    //printf("valor passado: %s\n", valor);
 
     if(strlen(valor) > MAX)
     {
         //erro
+        sprintf(res, "HTTP/1.1 400 Bad Request\n\nLimite ultrapassado\n");
         return -1;
+    }
+
+    while(aux!=NULL){
+        //printf("aux: %s\n", aux->bytes);
+        if(!strcmp(aux->bytes, valor)){
+            sprintf(res, "HTTP/1.1 400 Bad Request\n\nValor ja inserido\n");
+            return -1;
+        }
+        aux= aux->next;
     }
 
     if((dado = (Dado*)malloc(sizeof(Dado))) == NULL)
     {
         //erro
+        printf("erro");
         return -1;
     }
 
+    dado->bytes = (char*)malloc(strlen(valor)*sizeof(char));
 
-
-    dado->chave = chave++;
-    dado->bytes = valor;
+    dado->chave = id;
+    strcpy(dado->bytes, valor);
     dado->next = NULL;
 
     return inserir(dado);
@@ -213,29 +239,40 @@ int inserir(Dado *dado)
 
     D->numElems++;
 
+
+    sprintf(res, "HTTP/1.1 200 OK\n\nValor inserido com sucesso\nValor: %s, Chave: %ld\n", dado->bytes, dado->chave);
+
+    //chave++;
+
     return 1;
 }
 
 int processRequest(char *cmd)
 {
+    //printf("%s\n", cmd);
+    unsigned long id;
     char** req;
     int w, i = 0, j=0;
+    char idstr[30];
 
     // size of 2, because it is the method and (value or key)
     req = (char**)malloc(2 * sizeof(char*));
 
     // Olhar isso aqui depois <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     for(w=0;w<2;w++){
-        req[w] = (char*)malloc(100 * sizeof(char));
+        req[w] = (char*)malloc(1000 * sizeof(char));
+       // memset(req[w], '\0', sizeof(req[w]));
     }
 
     // Separates the entire command into an array of strings
     // First Position ->> Method "GET" or "POST" or "PUT" or "DELETE"
-    // Second Postion ->> Value or Key
-    while(cmd[i]!=';'){
+    // Second Postion ->> Key
+    // Third Position (optional) ->> Value
+
+    // Getting first token
+    while(cmd[i]!=' '){
         i++;
     }
-
 
     while(j < i)
     {
@@ -244,30 +281,177 @@ int processRequest(char *cmd)
     }
 
     req[0][j] = '\0';
+
+    // Getting second token
+    /*i++;
+    j = i;
+    w = 0;
+    while(cmd[i]!=';'){
+        i++;
+    }
+
+    while(j < i)
+    {
+        req[1][w] = cmd[j];
+        w++;
+        j++;
+    }*/
+
+    // Getting third token
     i=0;
     j++;
+    j++;
+
+    while(cmd[j]!=' ')
+    {
+        idstr[i] = cmd[j];
+        i++;
+        j++;
+    }
+
+    idstr[i] = '\0';
+    id = atoi(idstr);
+ printf("chave: %ld\n", id);
+
+    while(cmd[j]!='\n')
+    {
+        j++;
+    }
+
+    i=0;
     while(j <= strlen(cmd))
     {
         req[1][i] = cmd[j];
         i++;
         j++;
     }
-    req[0][i] = '\0';
+
+    req[1][i] = '\0';
+
     printf("Method: %s\n", req[0]);
-    printf("Data: %s\n", req[1]);
+    printf("Restante: %s\n", req[1]);
+    //printf("Value: %s\n", req[2]);
+
 
     if(!strcmp(req[0], "POST"))
     {
-        create(req[1]);
+        create(id, req[1]);
     }
     else if(!strcmp(req[0], "GET"))
     {
+        //id = atoi(req[1]);
+        get((int)id);
     }
     else if(!strcmp(req[0], "PUT"))
     {
+        //id = atoi(req[1]);
+        put((int)id, req[2]);
     }
     else if(!strcmp(req[0], "DELETE"))
     {
+        //id = atoi(req[1]);
+        del((int)id);
+    }
+
+    for(w=0;w<2;w++){
+        free(req[w]);
+    }
+
+    free(req);
+}
+
+int get(int id){
+    Dado *aux;
+
+    aux = D->first;
+
+    while(aux!=NULL)
+    {
+        if(aux->chave == id)
+        {
+            sprintf(res, "HTTP/1.1 200 OK\n\nChave: %ld, Valor: %s", aux->chave, aux->bytes);
+            return 1;
+        }
+        aux = aux->next;
+    }
+
+    sprintf(res, "HTTP/1.1 404 NOT FOUND\n\nRegistro nao encontrado\n");
+    return -1;
+}
+
+int put(int id, char *newValue)
+{
+    Dado *aux;
+
+    aux = D->first;
+
+    while(aux!=NULL)
+    {
+        if(aux->chave == id)
+        {
+            strcpy(aux->bytes, newValue);
+            sprintf(res, "HTTP/1.1 200 OK\n\nValor Atualizado C: %ld V: %s\n", aux->chave, aux->bytes);
+            return 1;
+        }
+        aux = aux->next;
+    }
+
+    sprintf(res, "HTTP/1.1 404 NOTFOUND\n\nRegistro nao encontrado\n");
+    return -1;
+}
+
+int del(int id)
+{
+    Dado *aux;
+    Dado *aux2;
+
+    aux = D->first;
+    aux2 = aux->next;
+
+    if(D->first == NULL)
+    {
+        sprintf(res, "HTTP/1.1 400 Bad Request\n\nLista esta vazia\n");
+        return -1;
+    }
+
+
+    // In case, it is the first element of my list
+    if(aux->chave == id)
+    {
+        D->first = aux->next;
+        free(aux);
+        sprintf(res, "HTTP/1.1 200 OK\n\nRegistro Removido com Sucesso!\n");
+        D->numElems--;
+        return 1;
+    }
+
+    while(aux2!=NULL){
+        if(aux2->chave == id)
+        {
+            aux->next = aux2->next;
+            sprintf(res, "HTTP/1.1 200 OK\n\nRegistro Removido com Sucesso!\n");
+            D->numElems--;
+            free(aux2);
+            return 1;
+        }
+        aux = aux->next;
+        aux2 = aux->next;
+    }
+
+    sprintf(res, "HTTP/1.1 404 NOT FOUND\n\nRegistro nao encontrado!");
+    return -1;
+}
+
+
+void printData(){
+    Dado *aux;
+    aux = D->first;
+
+    while(aux!=NULL){
+        printf("Chave: %ld\n", aux->chave);
+        printf("Valor: %s\n", aux->bytes);
+        printf("NumElems: %d\n\n", D->numElems);
+        aux = aux->next;
     }
 }
 

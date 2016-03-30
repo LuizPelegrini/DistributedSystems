@@ -18,7 +18,7 @@
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 
-char *concatenate(char *method, char *data);
+char *concatenate(char *method, char *value);
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -33,12 +33,13 @@ void *get_in_addr(struct sockaddr *sa)
 int main(int argc, char *argv[])
 {
 	int sockfd, numbytes;
-	char buf[MAXDATASIZE];
+	char bufS[MAXDATASIZE];
+	char bufR[MAXDATASIZE];
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
 	char s[INET6_ADDRSTRLEN];
 
-	if (argc != 4) {
+	if (argc <= 4 && argc >= 5) {
 	    fprintf(stderr,"usage: client hostname\n");
 	    exit(1);
 	}
@@ -80,41 +81,56 @@ int main(int argc, char *argv[])
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-	/*if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1) {
+
+    //if(argc == 4)
+        strcpy(bufS, concatenate(argv[2], argv[3]));
+    //else if(argc == 5)
+      //  strcpy(bufS, concatenate(argv[2], argv[3], argv[4]));
+
+    printf("cmd: %s\n", bufS);
+
+	send(sockfd, bufS, strlen(bufS), 0);
+
+    if ((numbytes = recv(sockfd, bufR, MAXDATASIZE-1, 0)) == -1) {
 	    perror("recv");
 	    exit(1);
-	}*/
+	}
 
-	strcpy(buf, concatenate(argv[2], argv[3]));
+	bufR[numbytes] = '\0';
 
-	send(sockfd, buf, strlen(buf), 0);
-
-	//buf[numbytes] = '\0';
-
-	printf("client: received '%s'\n",buf);
+	printf("client: received '%s'\n",bufR);
 
 	close(sockfd);
 
 	return 0;
 }
 
-char *concatenate(char* method, char* data){
+char *concatenate(char* method, char *value){
     char* str;
     int size;
 
-    size = strlen(method) + strlen(data);
-    // ';' + ';' + '\0'
+    size = strlen(method) + strlen(value);
+    // ';' + ';' + ';' + \0'
     size += 3;
 
     str = (char*)malloc(size*sizeof(char));
 
     memset(str, '\0', sizeof(str));
-    strcpy(str, method);
-    str[strlen(method)] = ';';
-    strncat(str, data, strlen(data));
 
-    printf("str: %s\n", str);
+    strcpy(str, method);
+
+    str[strlen(method)] = ' ';
+
+    strncat(str, value, strlen(value));
+
+   // str[strlen(method) + strlen(key) + 1] = ';';
+
+    //strncat(str, value, strlen(value));
+
+    //printf("str: %s\n", str);
 
     return str;
 }
+
+
 
