@@ -154,7 +154,7 @@ int main(int argc, char* argv[])
             perror("send");*/
         bytesReceived = recv(new_fd, command, MAX_DATASIZE, 0);
 
-        getContentLength(command);
+        printf("CONTENT-LENGTH: %d\n", getContentLength(command));
         //printf("numBytes >> %d\n", numbytes);
         command[bytesReceived] = '\0';
         printf("comando inteiro: %s\n\n", command);
@@ -506,12 +506,51 @@ int del(int id)
     return -1;
 }
 
-int getContentLength(char *command){}
-
-char *encodeString(char* valor)
+int getContentLength(char *command)
 {
+    char **tokens;
+    char *commandAux;
+    int i;
 
+    tokens = (char**)malloc(50*sizeof(char*));
+    commandAux = (char*)malloc(strlen(command)*sizeof(char));
+    strcpy(commandAux, command);
+
+    for(i=0;i<20;i++)
+    {
+        tokens[i] = (char*)malloc(100*sizeof(char));
+    }
+
+    i=0;
+    tokens[i] = strtok(commandAux, " \n");
+
+    if(strcmp(tokens[0], "GET") != 0)
+    {
+        while(tokens[i] != NULL)
+        {
+            i++;
+            tokens[i] = strtok(NULL, " \n");
+            if(!(strcmp(tokens[i], "Content-Length:")))
+            {
+                i++;
+                tokens[i] = strtok(NULL, " \n");
+                //printf("Found!\n");
+                break;
+            }
+        }
+    }
+    // In GET requests, just return 0
+    else
+    {
+        return 0;
+    }
+
+    return atoi(tokens[i]);
+
+    free(commandAux);
 }
+
+char *encodeString(char* valor){}
 
 
 void printData(){
