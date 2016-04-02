@@ -46,6 +46,7 @@ char *encodeString(char* valor);
 
 unsigned long chave;
 char res[MAX_DATASIZE];
+char ip[INET6_ADDRSTRLEN];
 Dados *D;
 
 void sigchld_handler(int s)
@@ -75,6 +76,7 @@ int main(int argc, char* argv[])
 	int rv;
 	int status;
 	int bytesReceived, bytesSent;
+	int contentLength;
 
     if(argc!=2){
         fprintf(stderr,"usage: port number\n");
@@ -97,6 +99,9 @@ int main(int argc, char* argv[])
 
 	// loop through all the results and bind to the first we can
 	for(p = servinfo; p != NULL; p = p->ai_next) {
+
+        void *addr;
+
 		if ((sockfd = socket(p->ai_family, p->ai_socktype,
 				p->ai_protocol)) == -1) {
 			perror("server: socket");
@@ -114,6 +119,9 @@ int main(int argc, char* argv[])
 			perror("server: bind");
 			continue;
 		}
+        // Get the host ip
+
+        // inet_ntop(their_addr., addr, ip, sizeof ip);
 
 		break;
 	}
@@ -154,17 +162,24 @@ int main(int argc, char* argv[])
             perror("send");*/
         bytesReceived = recv(new_fd, command, MAX_DATASIZE, 0);
 
-        printf("CONTENT-LENGTH: %d\n", getContentLength(command));
-        //printf("numBytes >> %d\n", numbytes);
-        command[bytesReceived] = '\0';
-        printf("comando inteiro: %s\n\n", command);
-        status = processRequest(command);
-        //printData();
-        if(bytesSent = send(new_fd, res, strlen(res), 0) == -1){
-            fprintf(stderr, "Erro no send\n");
-            return -1;
+        contentLength = getContentLength(command);
+
+        if(contentLength < 1000)
+        {
+            command[bytesReceived] = '\0';
+            //printf("comando inteiro: %s\n\n", command);
+            status = processRequest(command);
+            //printData();
+            //printf("strlen(res): %d\n", (int)strlen(res));
+            //printf("RES: %s\n", res);
+            if(bytesSent = send(new_fd, res, strlen(res), 0) == -1){
+                fprintf(stderr, "Erro no send\n");
+                return -1;
+            }
         }
-        //printf("RES: %s\n", res);
+        //printf("numBytes >> %d\n", numbytes);
+
+
         //printf("STRLEN RES: %d\n", (int)strlen(res));
         //strcpy(res, "");
         //printf("RES: %s\n", res);
@@ -420,14 +435,18 @@ int processRequest(char *cmd)
 
 int get(int id){
     Dado *aux;
-
+    char *response;
     aux = D->first;
 
     while(aux!=NULL)
     {
         if(aux->chave == id)
         {
-            sprintf(res, "HTTP/1.1 200 OK\n\nchave=%ld&valor=%s\n", aux->chave, aux->bytes);
+            response = (char*)malloc(strlen(aux->bytes)*sizeof(char));
+
+            sprintf(response, "chave=%ld&valor=%s", aux->chave, aux->bytes);
+            sprintf(res, "HTTP/1.1 200 OK\nContent-Length: %d\n\n%s\n\n", (int)strlen(response)+1, response);
+            free(response);
             return 1;
         }
         aux = aux->next;
@@ -545,9 +564,9 @@ int getContentLength(char *command)
         return 0;
     }
 
-    return atoi(tokens[i]);
-
     free(commandAux);
+
+    return atoi(tokens[i]);
 }
 
 char *encodeString(char* valor){}
