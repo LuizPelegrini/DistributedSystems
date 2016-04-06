@@ -17,9 +17,9 @@
 
 #define BACKLOG 10	 // how many pending connections queue will hold
 
-#define MAX 1000
+#define MAX 1000    // Size of buffer, where the HTTP body will be stored
 
-#define MAX_DATASIZE 2000
+#define MAX_DATASIZE 2000 // Size of my request buffer
 
 typedef struct dado{
     unsigned long   chave;
@@ -33,11 +33,11 @@ typedef struct dados{
 }Dados;
 
 int init();
-int create(int id, char *valor);
+int create(unsigned long id, char *valor);
 int inserir(Dado *dado);
-int get(int id);
-int put(int id, char *newValue);
-int del(int id);
+int get(unsigned long id);
+int put(unsigned long id, char *newValue);
+int del(unsigned long id);
 int processRequest(char *cmd);
 void printData();
 char *setResponse(int status);
@@ -45,6 +45,7 @@ int getContentLength(char* command);
 char *encodeString(char* valor);
 
 unsigned long chave;
+int contentLength;
 char res[MAX_DATASIZE];
 char ip[INET6_ADDRSTRLEN];
 Dados *D;
@@ -76,7 +77,6 @@ int main(int argc, char* argv[])
 	int rv;
 	int status;
 	int bytesReceived, bytesSent;
-	int contentLength;
 
     if(argc!=2){
         fprintf(stderr,"usage: port number\n");
@@ -119,9 +119,6 @@ int main(int argc, char* argv[])
 			perror("server: bind");
 			continue;
 		}
-        // Get the host ip
-
-        // inet_ntop(their_addr., addr, ip, sizeof ip);
 
 		break;
 	}
@@ -156,10 +153,6 @@ int main(int argc, char* argv[])
 			continue;
 		}
 
-		// this is the child process
-        //close(sockfd); // child doesn't need the listener
-        /*if (send(new_fd, "Hello, world!", 13, 0) == -1)
-            perror("send");*/
         bytesReceived = recv(new_fd, command, MAX_DATASIZE, 0);
 
         contentLength = getContentLength(command);
@@ -172,10 +165,15 @@ int main(int argc, char* argv[])
             //printData();
             //printf("strlen(res): %d\n", (int)strlen(res));
             //printf("RES: %s\n", res);
-            if(bytesSent = send(new_fd, res, strlen(res), 0) == -1){
-                fprintf(stderr, "Erro no send\n");
-                return -1;
-            }
+
+        }
+        else{
+            sprintf(res, "HTTP/1.1 400 BAD REQUEST\n\n");
+        }
+
+        if(bytesSent = send(new_fd, res, strlen(res), 0) == -1){
+            fprintf(stderr, "Erro no send\n");
+            return -1;
         }
         //printf("numBytes >> %d\n", numbytes);
 
@@ -201,23 +199,21 @@ int init(){
     D->first = NULL;
     D->numElems = 0;
 
-    //chave = 0;
+    contentLength = 0;
 }
 
 
-int create(int id, char *valor)
+int create(unsigned long id, char *valor)
 {
     Dado *dado;
     Dado *aux;
 
     aux = D->first;
 
-    //printf("valor passado: %s\n", valor);
 
     while(aux!=NULL){
         //printf("aux: %s\n", aux->bytes);
         if(aux->chave == id){
-            //sprintf(res, "HTTP/1.1 400 Bad Request\n\nValor ja inserido\n");
             sprintf(res, "HTTP/1.1 409 CONFLICT\n\n");
             return -1;
         }
@@ -226,12 +222,11 @@ int create(int id, char *valor)
 
     if((dado = (Dado*)malloc(sizeof(Dado))) == NULL)
     {
-        //erro
         printf("erro");
         return -1;
     }
 
-    dado->bytes = (char*)malloc(strlen(valor)*sizeof(char));
+    dado->bytes = (char*)malloc(strlen(valor)+1*sizeof(char));
 
     encodeString(valor);
 
@@ -251,6 +246,7 @@ int inserir(Dado *dado)
     {
         D->first = dado;
     }
+
     // Insert on the last position
     else
     {
@@ -263,35 +259,32 @@ int inserir(Dado *dado)
     D->numElems++;
 
 
-    //sprintf(res, "HTTP/1.1 200 OK\n\nValor inserido com sucesso\nchave=%ld&valor=%s\n", dado->chave, dado->bytes);
     sprintf(res, "HTTP/1.1 200 OK\n\n");
-    //chave++;
 
     return 1;
 }
 
 int processRequest(char *cmd)
 {
-    //printf("%s\n", cmd);
     unsigned long id;
     char** req;
     int w, i = 0, j=0;
     char idstr[30];
     char *data;
 
-    // size of 2, because it is the method and (value or key)
+    // size of 2, because it is the method and header+body
     req = (char**)malloc(2 * sizeof(char*));
     data = (char*)malloc(MAX * sizeof(char*));
 
+    // Separates the entire command into an array of strings
+    // First Position ->> Method "GET" or "POST" or "PUT" or "DELETE"
+    // Second Postion ->> rest of the header and the entire body
     req[0] = (char*)malloc(10*sizeof(char));
     req[1] = (char*)malloc((strlen(cmd) - strlen(req[0])) * sizeof(char));
 
-    // Separates the entire command into an array of strings
-    // First Position ->> Method "GET" or "POST" or "PUT" or "DELETE"
-    // Second Postion ->> Key
-    // Third Position (optional) ->> Value
 
-    // Getting first token
+
+    // Getting first token (the method)
     while(cmd[i]!=' '){
         i++;
     }
@@ -303,21 +296,6 @@ int processRequest(char *cmd)
     }
 
     req[0][j] = '\0';
-
-    // Getting second token
-    /*i++;
-    j = i;
-    w = 0;
-    while(cmd[i]!=';'){
-        i++;
-    }
-
-    while(j < i)
-    {
-        req[1][w] = cmd[j];
-        w++;
-        j++;
-    }*/
 
     // Getting key
     i=0;
@@ -332,7 +310,7 @@ int processRequest(char *cmd)
     }
 
     idstr[i] = '\0';
-    id = atoi(idstr);
+    id = atol(idstr);
 
     //printf("chave: %ld\n", id);
 
@@ -356,19 +334,12 @@ int processRequest(char *cmd)
 
     //printf("Method: %s\n", req[0]);
     //printf("Restante: %s\n", req[1]);
-    //printf("Value: %s\n", req[2]);
-
-
-
 
     if(!strcmp(req[0], "POST"))
     {
-        /*token = strtok(req[1], " \n");
-        while(token){
-            printf("TOKEN >> %s\n", token);
-            token = strtok(NULL, " \n");
-        }*/
         i=0;
+
+        // The body comes after \r\n\r\n
         while(req[1][i]!='\n' || req[1][i+2]!='\n')
         {
             i++;
@@ -389,16 +360,13 @@ int processRequest(char *cmd)
         //printf("DATA: %s\n", data);
 
         create(id, data);
-        free(data);
     }
     else if(!strcmp(req[0], "GET"))
     {
-        //id = atoi(req[1]);
-        get((int)id);
+        get(id);
     }
     else if(!strcmp(req[0], "PUT"))
     {
-        //id = atoi(req[1]);
         i=0;
         while(req[1][i]!='\n' || req[1][i+2]!='\n')
         {
@@ -415,13 +383,11 @@ int processRequest(char *cmd)
         }
 
         data[j] = '\0';
-        put((int)id, data);
-        free(data);
+        put(id, data);
     }
     else if(!strcmp(req[0], "DELETE"))
     {
-        //id = atoi(req[1]);
-        del((int)id);
+        del(id);
     }
 
 
@@ -429,11 +395,11 @@ int processRequest(char *cmd)
     for(w=0;w<2;w++){
         free(req[w]);
     }
-
+    free(data);
     free(req);
 }
 
-int get(int id){
+int get(unsigned long id){
     Dado *aux;
     char *response;
     aux = D->first;
@@ -442,7 +408,7 @@ int get(int id){
     {
         if(aux->chave == id)
         {
-            response = (char*)malloc(strlen(aux->bytes)*sizeof(char));
+            response = (char*)malloc(strlen(aux->bytes)+100*sizeof(char));
 
             sprintf(response, "chave=%ld&valor=%s", aux->chave, aux->bytes);
             sprintf(res, "HTTP/1.1 200 OK\nContent-Length: %d\n\n%s\n\n", (int)strlen(response)+1, response);
@@ -452,12 +418,11 @@ int get(int id){
         aux = aux->next;
     }
 
-    //sprintf(res, "HTTP/1.1 404 NOT FOUND\n\nRegistro nao encontrado\n");
     sprintf(res, "HTTP/1.1 404 NOT FOUND\n\n");
     return -1;
 }
 
-int put(int id, char *newValue)
+int put(unsigned long id, char *newValue)
 {
     Dado *aux;
 
@@ -467,40 +432,39 @@ int put(int id, char *newValue)
     {
         if(aux->chave == id)
         {
+            aux->bytes = (char*)realloc(aux->bytes, strlen(newValue)+1);
             strcpy(aux->bytes, newValue);
-            //sprintf(res, "HTTP/1.1 200 OK\n\nValor Atualizado chave=%ld&valor=%s\n", aux->chave, aux->bytes);
             sprintf(res, "HTTP/1.1 200 OK\n\n");
             return 1;
         }
         aux = aux->next;
     }
 
-    //sprintf(res, "HTTP/1.1 404 NOTFOUND\n\nRegistro nao encontrado\n");
     sprintf(res, "HTTP/1.1 404 NOT FOUND\n\n");
     return -1;
 }
 
-int del(int id)
+int del(unsigned long id)
 {
     Dado *aux;
     Dado *aux2;
 
     aux = D->first;
 
+    // Checks whether the list is empty
     if(aux == NULL)
     {
-        //sprintf(res, "HTTP/1.1 400 Bad Request\n\nLista esta vazia\n");
         sprintf(res, "HTTP/1.1 400 BAD REQUEST\n\n");
         return -1;
     }
 
     aux2 = aux->next;
+
     // In case, it is the first element of my list
     if(aux->chave == id)
     {
         D->first = aux->next;
         free(aux);
-        //sprintf(res, "HTTP/1.1 200 OK\n\nRegistro Removido com Sucesso!\n");
         sprintf(res, "HTTP/1.1 200 OK\n\n");
         D->numElems--;
         return 1;
@@ -510,7 +474,6 @@ int del(int id)
         if(aux2->chave == id)
         {
             aux->next = aux2->next;
-            //sprintf(res, "HTTP/1.1 200 OK\n\nRegistro Removido com Sucesso!\n");
             sprintf(res, "HTTP/1.1 200 OK\n\n");
             D->numElems--;
             free(aux2);
@@ -520,7 +483,6 @@ int del(int id)
         aux2 = aux->next;
     }
 
-    //sprintf(res, "HTTP/1.1 404 NOT FOUND\n\nRegistro nao encontrado!");
     sprintf(res, "HTTP/1.1 404 NOT FOUND\n\n");
     return -1;
 }
@@ -529,44 +491,61 @@ int getContentLength(char *command)
 {
     char **tokens;
     char *commandAux;
-    int i;
+    int i, contentLength;
 
-    tokens = (char**)malloc(50*sizeof(char*));
-    commandAux = (char*)malloc(strlen(command)*sizeof(char));
+    // 100 tokens
+    tokens = (char**)malloc(100*sizeof(char*));
+    commandAux = (char*)malloc(strlen(command)+1*sizeof(char));
     strcpy(commandAux, command);
 
-    for(i=0;i<20;i++)
+    // each token has a size of 100 at maximum
+    for(i=0;i<100;i++)
     {
         tokens[i] = (char*)malloc(100*sizeof(char));
     }
 
+    // Separate the command into tokens by " " and '\n'
     i=0;
     tokens[i] = strtok(commandAux, " \n");
 
+    // Keep doing it, if it is not a GET HTTP method
+    // because the GET request method does not contain the Content-Length header
     if(strcmp(tokens[0], "GET") != 0)
     {
         while(tokens[i] != NULL)
         {
+            //printf("token %d: %s\n", i, tokens[i]);
             i++;
             tokens[i] = strtok(NULL, " \n");
             if(!(strcmp(tokens[i], "Content-Length:")))
             {
                 i++;
                 tokens[i] = strtok(NULL, " \n");
-                //printf("Found!\n");
                 break;
             }
         }
+
+        contentLength = atoi(tokens[i]);
     }
+
     // In GET requests, just return 0
     else
     {
-        return 0;
+        contentLength = -1;
     }
 
-    free(commandAux);
 
-    return atoi(tokens[i]);
+    /*
+    for(i=0;i<100;i++)
+    {
+        printf("token %d: %s\n", i, tokens[i]);
+        free(tokens[i]);
+        printf("Here!\n");
+    }
+    free(tokens);
+    free(commandAux);*/
+
+    return contentLength;
 }
 
 char *encodeString(char* valor){}
